@@ -1,0 +1,15 @@
+python-dotenv
+
+openai
+google-genai
+mistralai
+
+langchain
+langchain-openai
+langchain-google-genai
+langchain-mistralai
+
+requests
+numpy
+pandas
+ipykernel
