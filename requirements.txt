@@ -13,3 +13,4 @@ requests
 numpy
 pandas
 ipykernel
+langchain_huggingface
