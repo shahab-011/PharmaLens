@@ -1,206 +1,162 @@
 from dotenv import load_dotenv
 
-load_dotenv()
-
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
 
 from langchain_groq import ChatGroq
 from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.output_parsers import PydanticOutputParser
+
+from backendd.model import PharmaDocument
 
 
-app = FastAPI()
+# ============================================================
+# 1. LOAD ENVIRONMENT VARIABLES
+# ============================================================
+
+load_dotenv()
 
 
-# Allow React frontend to communicate with FastAPI
+# ============================================================
+# 2. CREATE FASTAPI APPLICATION
+# ============================================================
+
+app = FastAPI(
+    title="PharmaLens API",
+    description="AI-powered pharmaceutical document intelligence",
+    version="1.0.0"
+)
+
+
+# ============================================================
+# 3. CORS CONFIGURATION
+# ============================================================
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+
+    allow_origins=[
+        "http://localhost:5173",
+        "http://127.0.0.1:5173"
+    ],
+
     allow_credentials=True,
+
     allow_methods=["*"],
+
     allow_headers=["*"],
 )
 
 
-# Groq model
-model = ChatGroq(
-    model="openai/gpt-oss-20b",
-    temperature=0,
-    max_tokens=1024
+# ============================================================
+# 4. PYDANTIC OUTPUT PARSER
+# ============================================================
+
+parser = PydanticOutputParser(
+    pydantic_object=PharmaDocument
 )
 
 
-# Your PharmaLens prompt
+# ============================================================
+# 5. GROQ MODEL
+# ============================================================
+
+model = ChatGroq(
+    model="openai/gpt-oss-20b",
+    temperature=0,
+    max_tokens=4096,
+    reasoning_effort="low",
+    include_reasoning=False
+)
+
+
+# ============================================================
+# 6. PROMPT TEMPLATE
+# ============================================================
+
 prompt = ChatPromptTemplate.from_messages([
     (
         "system",
         """
-You are PharmaLens, an AI-powered pharmaceutical document
-intelligence assistant.
+You are PharmaLens, an AI-powered pharmaceutical
+document intelligence system.
 
-Your task is to analyze unstructured pharmaceutical, clinical-trial,
-drug-development, regulatory, or medical research documents and extract
-useful information accurately.
+Your task is to extract structured information from
+pharmaceutical, clinical-trial, drug-development,
+regulatory, or medical research documents.
 
 Follow these rules strictly:
 
-1. Use ONLY information explicitly stated in the provided document.
-2. NEVER invent, assume, estimate, or infer missing information.
-3. If information is not available, write "Not provided".
-4. Preserve the exact numbers, percentages, dates, doses, units,
-   and study identifiers from the document.
-5. Distinguish between reported facts, preliminary/interim results,
-   company estimates, planned/future events, and missing information.
-6. Detect contradictions or inconsistencies.
-7. If two sections provide different values for the same field,
-   report both values and explain the conflict.
-8. Distinguish participant populations such as enrolled, screened,
-   randomized, treated, evaluable, safety, and efficacy populations.
-9. Do not treat company estimates as verified facts.
-10. Do not provide medical advice or clinical recommendations.
-11. Do not claim that an investigational drug is safe, effective,
-    approved, or clinically beneficial unless explicitly stated.
-12. Clearly identify whether results are preliminary, interim, or final.
+1. Use ONLY information explicitly stated in the document.
 
-Extract useful information including:
+2. NEVER invent, assume, estimate, or infer information.
 
-DOCUMENT INFORMATION
-- Document title
-- Document type
-- Company / sponsor
-- Report date
-- Study name
-- Study identifier
+3. If information is not available:
+   - return null for optional fields
+   - return an empty list for list fields
 
-DRUG INFORMATION
-- Drug name
-- Generic name
-- Drug code
-- Active ingredient
-- Drug class
-- Route of administration
-- Dosage
-- Dosing frequency
-- Treatment duration
-- Therapeutic area
-- Target condition / indication
+4. Preserve exact:
+   - numbers
+   - percentages
+   - dates
+   - doses
+   - units
+   - study identifiers
 
-CLINICAL TRIAL INFORMATION
-- Clinical trial phase
-- Study design
-- Number enrolled
-- Number screened
-- Number randomized
-- Number treated
-- Number in efficacy analysis
-- Number in safety analysis
-- Number of study sites
-- Countries / locations
-- Study start date
-- Expected completion date
-- Expected results date
-- Principal investigator
+5. Distinguish between:
+   - enrolled
+   - screened
+   - randomized
+   - treated
+   - efficacy population
+   - safety population
 
-EFFICACY / OUTCOME INFORMATION
-- Primary endpoint
-- Secondary endpoints
-- Treatment results
-- Comparator results
-- Placebo results
-- Response rates
-- Other reported outcomes
+6. Detect contradictions and inconsistencies.
 
-SAFETY INFORMATION
-- Adverse events
-- Serious adverse events
-- Treatment discontinuations
-- Treatment-related events
-- Severity / grade if reported
+7. If two sections contain different values for
+   the same field, DO NOT silently choose one.
 
-REGULATORY INFORMATION
-- Regulatory status
-- Regulatory agency
-- Approval status
-- Submission status
+8. Record important contradictions in the
+   contradictions field.
 
-OTHER IMPORTANT INFORMATION
-- Resistance monitoring
-- Biomarkers
-- Manufacturing information
-- Market estimates
-- Important company statements
-- Limitations
+9. Distinguish between:
+   - reported facts
+   - preliminary results
+   - interim results
+   - final results
+   - company-reported information
+   - company estimates
+   - planned events
+   - future events
 
-DATA QUALITY
-- Missing information
-- Contradictions
-- Ambiguous statements
-- Potential data-quality issues
+10. Do not treat company estimates as verified facts.
 
-OUTPUT FORMAT:
+11. Do not provide medical advice or clinical
+    recommendations.
 
-## 1. Executive Summary
+12. Do not claim that a drug is:
+    - safe
+    - effective
+    - approved
+    - clinically beneficial
 
-Write a concise 3–5 sentence summary.
+    unless the document explicitly states this.
 
-## 2. Key Information Table
+13. Never use outside knowledge.
 
-| Field | Extracted Information |
-|---|---|
-| Company | |
-| Study Name | |
-| Study ID | |
-| Drug Name | |
-| Indication | |
-| Therapeutic Area | |
-| Clinical Phase | |
-| Study Design | |
-| Participants | |
-| Dosage | |
-| Route | |
-| Treatment Duration | |
-| Success / Outcome | |
-| Adverse Events | |
-| Serious Adverse Events | |
-| Expected Results Date | |
-| Regulatory Status | |
+14. Accuracy is more important than completeness.
 
-Use "Not provided" when information is unavailable.
+15. Return ONLY valid JSON matching the
+    PharmaDocument schema.
 
-## 3. Detailed Extraction
-
-Provide other useful information.
-
-## 4. Data Quality & Contradictions
-
-List important contradictions, inconsistencies,
-ambiguities, and missing critical information.
-
-For each contradiction explain:
-
-- Field
-- Value A
-- Value B
-- Why it is a conflict
-
-If there are none, write:
-
-"No significant contradictions identified."
-
-## 5. Important Notes
-
-Mention whether results are preliminary, interim, final,
-company-reported, estimated, or otherwise qualified.
-
-Accuracy is more important than completeness.
-Never fabricate information.
+{format_instructions}
 """
     ),
+
     (
         "human",
         """
-Analyze the following pharmaceutical document:
+Analyze the following pharmaceutical document.
 
 ---------------- DOCUMENT START ----------------
 
@@ -208,35 +164,119 @@ Analyze the following pharmaceutical document:
 
 ---------------- DOCUMENT END ----------------
 
-Extract and summarize the information according to the instructions.
+Extract the information according to the
+PharmaDocument schema.
+
+Return ONLY the structured JSON.
 """
-    ),
+    )
 ])
 
 
-# Request structure
-class DocumentRequest(BaseModel):
-    document: str
+# ============================================================
+# 7. ROOT ENDPOINT
+# ============================================================
 
-
-# Test endpoint
 @app.get("/")
-def home():
+def root():
+
     return {
-        "message": "PharmaLens API is running"
+        "message": "PharmaLens API is running",
+        "status": "online"
     }
 
 
-# Main PharmaLens endpoint
-@app.post("/analyze")
-def analyze_document(request: DocumentRequest):
+# ============================================================
+# 8. HEALTH CHECK
+# ============================================================
 
-    final_prompt = prompt.invoke({
-        "document": request.document
-    })
-
-    response = model.invoke(final_prompt)
+@app.get("/health")
+def health_check():
 
     return {
-        "result": response.content
+        "status": "healthy",
+        "service": "PharmaLens"
     }
+
+
+# ============================================================
+# 9. ANALYZE DOCUMENT
+# ============================================================
+
+@app.post("/analyze", response_model=PharmaDocument)
+def analyze_document(document: str):
+
+    # --------------------------------------------------------
+    # Validate input
+    # --------------------------------------------------------
+
+    if not document or not document.strip():
+
+        raise HTTPException(
+            status_code=400,
+            detail="Document cannot be empty."
+        )
+
+    try:
+
+        # ----------------------------------------------------
+        # Create final prompt
+        # ----------------------------------------------------
+
+        final_prompt = prompt.invoke({
+            "document": document,
+            "format_instructions": (
+                parser.get_format_instructions()
+            )
+        })
+
+
+        # ----------------------------------------------------
+        # Send request to Groq
+        # ----------------------------------------------------
+
+        response = model.invoke(final_prompt)
+
+
+        # ----------------------------------------------------
+        # Check model response
+        # ----------------------------------------------------
+
+        if not response.content:
+
+            raise ValueError(
+                "Groq returned an empty response."
+            )
+
+
+        # ----------------------------------------------------
+        # Parse response using Pydantic
+        # ----------------------------------------------------
+
+        result = parser.parse(
+            response.content
+        )
+
+
+        # ----------------------------------------------------
+        # Return structured result
+        # ----------------------------------------------------
+
+        return result
+
+
+    except Exception as e:
+
+        print("\n========================================")
+        print("        PHARMALENS ERROR")
+        print("========================================")
+
+        print(str(e))
+
+        print("========================================\n")
+
+
+        raise HTTPException(
+            status_code=500,
+            detail=f"Document analysis failed: {str(e)}"
+        )
