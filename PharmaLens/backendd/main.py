@@ -1,6 +1,6 @@
 from dotenv import load_dotenv
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Body, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from langchain_groq import ChatGroq
@@ -204,7 +204,7 @@ def health_check():
 # ============================================================
 
 @app.post("/analyze", response_model=PharmaDocument)
-def analyze_document(document: str):
+def analyze_document(document: str = Body(...)):
 
     # --------------------------------------------------------
     # Validate input
