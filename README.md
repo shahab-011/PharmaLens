@@ -1,3 +1,5 @@
-# genAI-1
+# PharmaLens
 
-I am learning generative AI and building projects to practice working with different chat models.
+PharmaLens is an AI-powered pharmaceutical document intelligence application.
+
+This project is part of my work learning generative AI and building applications with chat models.
